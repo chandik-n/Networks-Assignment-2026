@@ -1,7 +1,7 @@
-CREATE DATABASE chat_app;
+CREATE DATABASE IF NOT EXISTS chat_app;
 USE chat_app;
 
-CREATE TABLE Users (
+CREATE TABLE IF NOT EXISTS Users (
     user_id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
     username VARCHAR(255) NOT NULL UNIQUE,
     user_password VARCHAR(255) NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE Users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE PrivateMessages (
+CREATE TABLE IF NOT EXISTS PrivateMessages (
     message_id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
     sender_id INT NOT NULL,
     receiver_id INT NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE PrivateMessages (
     FOREIGN KEY (receiver_id) REFERENCES Users(user_id)
 );
 
-CREATE TABLE GroupChat (
+CREATE TABLE IF NOT EXISTS GroupChat (
     group_id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
     group_name VARCHAR(255) NOT NULL UNIQUE,
     created_by INT NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE GroupChat (
     FOREIGN KEY (created_by) REFERENCES Users(user_id)
 );
 
-CREATE TABLE GroupChatMembers (
+CREATE TABLE IF NOT EXISTS GroupChatMembers (
     group_id INT NOT NULL,
     user_id INT NOT NULL,
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -36,7 +36,7 @@ CREATE TABLE GroupChatMembers (
     FOREIGN KEY (user_id) REFERENCES Users(user_id)
 );
 
-CREATE TABLE GroupMessages (
+CREATE TABLE IF NOT EXISTS GroupMessages (
     message_id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
     group_id INT NOT NULL,
     sender_id INT NOT NULL,
@@ -46,3 +46,5 @@ CREATE TABLE GroupMessages (
     FOREIGN KEY (sender_id) REFERENCES Users(user_id)
 );
 
+ALTER TABLE PrivateMessages 
+    ADD COLUMN  media LONGBLOB;
