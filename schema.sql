@@ -17,7 +17,7 @@ CREATE TABLE PrivateMessages (
     sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sender_id) REFERENCES Users(user_id),
     FOREIGN KEY (receiver_id) REFERENCES Users(user_id)
-)
+);
 
 CREATE TABLE GroupChat (
     group_id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
