@@ -1,26 +1,44 @@
 from socket import *
+import Protocol # Custom made, see Protocol.py
 import threading 
 
 accounts = dict() # A dictionary of the accounts present in the textfile.
 
+
 def handle_client(connectionSocket: socket, address: tuple):
     temp = connectionSocket.recv(1024).decode().split("\n")
-    username, password = temp[0], temp[1]
-
-    # Checks if the username exists or not.
     try:
-        if accounts[username] == password:
-            # Allow access to the account.
-            connectionSocket.sendall("Your account exists.".encode())
+        if temp[0] == Protocol.initiate_protocol(1): # Logs into account. 
+            handle_login(connectionSocket, address)
+        elif temp[0] == Protocol.initiate_protocol(2): # Creates an account.
+            handle_account_creation(connectionSocket, address)
+        elif temp[0] == Protocol.initiate_protocol(3): # Closes the program.
+             handle_program_close(connectionSocket, address)
+        
         else:
-            connectionSocket.sendall("Wrong password.".encode())
-    except KeyError:
-        # Ask if user would like to make an account.
-        connectionSocket.sendall("Would you like to make an account?[Y/n]:\t".encode())
-        pass
+                print("Not a valid protocol. Closing connection.")
+
+    except: # Possible exception of temp not being split appropriately.
+        print("Error: Check how temp has been configured:")
+        print(temp)
 
     finally:
         connectionSocket.close()
+
+    pass
+
+def handle_login(connectionSocket: socket, address: tuple):
+    print("Method successfully checked.")
+    connectionSocket.close()
+
+def handle_account_creation(connectionSocket: socket, address: tuple):
+    pass
+
+# This will be much more important later.
+def handle_program_close(connectionSocket: socket, address: tuple):
+    connectionSocket.close()
+    print("User:\t", "disconnected.") 
+
 
 # Loads the accounts from the accounts.txt.
 def load_accounts(txt: str = "accounts.txt") -> None:

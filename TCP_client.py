@@ -1,4 +1,5 @@
 from socket import *
+import Protocol # Custom made, see Protocol.py
 
 # This method creates a temporary user whose details will be compared to the details on the server.
 def create_temp_user(username: str,  password: str) -> list:
@@ -10,7 +11,7 @@ def log_in(clientSocket: socket) -> None:
     username = input("Please enter your username:\t")
     password  = input ("Please enter your password:\t")
     temp = create_temp_user(username, password)
-    send_message(clientSocket, f"LOGIN|{temp[0]}\n{temp[1]}")
+    send_message(clientSocket, f"{Protocol.initiate_protocol(1)}\n{temp[0]}\n{temp[1]}")
 
     text = receive_message(clientSocket)
 
@@ -21,6 +22,14 @@ def log_in(clientSocket: socket) -> None:
             # send confirmation to create account to server.
             pass
 
+# Will be defined in much more detail later.
+def close_program(clientSocket: socket):
+    send_message(clientSocket, Protocol.initiate_protocol(3))
+    print("You have successfully closed the program.")
+    clientSocket.close()
+    quit()
+    pass
+
 def main():
     try:
         serverName = 'localhost'
@@ -29,13 +38,13 @@ def main():
         clientSocket.connect((serverName, serverPort))
         while True:
             print("Welcome to our chat app! Press:\n" \
-            "1. Log-in/Sign-Up\n" \
-            "2. Close Program")
+            "\t1. Log-in\n" \
+            "\t2. Close Program")
             num = eval(input())
             if num == 1:
                 log_in(clientSocket)
             elif num == 2:
-                break
+                close_program(clientSocket)
             else:
                 continue
         clientSocket.close()
