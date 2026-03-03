@@ -10,8 +10,6 @@ PASSWORD = os.getenv("PASSWORD")
 DATABASE = os.getenv("DATABASE")
 PORT = os.getenv("PORT")
 
-print(USER)
-
 class DB:
     def __init__(self, host=HOST, user=USER, password=PASSWORD, database=DATABASE, port=PORT):
         self.connection = mysql.connector.connect(
@@ -68,6 +66,6 @@ class DB:
 
 db = DB(host=HOST, user=USER, password=PASSWORD, port=PORT, database=DATABASE)
 
-    
+print("DB connection successful", db.get_all_users())
 
 
