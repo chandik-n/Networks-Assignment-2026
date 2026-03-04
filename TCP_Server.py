@@ -1,40 +1,50 @@
 from socket import *
 import Protocol # Custom made, see Protocol.py
-import threading 
-
-accounts = dict() # A dictionary of the accounts present in the textfile.
-account_lock = threading.Lock()
+import threading
 
 
+accounts = {} # A dictionary of the accounts present in the textfile.
+account_lock = threading.Lock() # Prevents multiple threads from writing to accounts at the same time
+
+online_users = {}
+online_lock = threading.Lock()
+
+
+# Handles one connected client. Each client is run in its own thread
 def handle_client(connectionSocket: socket, address: tuple):
-    username = None
+    username = None # Will store the username of the logged-in user for this connection
     try:
         while True:
-            temp = receive_packet(connectionSocket)
-            if not temp:
+            temp = receive_packet(connectionSocket) # Reads the entire message from the client
+            if not temp: # If client provides no response. connection terminated
                 break
     
-            action = temp[0].strip()
-            if action == Protocol.initiate_protocol(1):
+            action = temp[0].strip() # Tells the server what action the user wants to perform
+            if action == Protocol.initiate_protocol(1): # LOGIN
                 username = handle_login(connectionSocket, temp, username)
 
-            elif action == Protocol.initiate_protocol(2):
+            elif action == Protocol.initiate_protocol(2): #CREATE
                 handle_account_creation(connectionSocket, temp)
 
-            elif action == Protocol.initiate_protocol(3):
+            elif action == Protocol.initiate_protocol(3): #CLOSE
                 handle_program_close(connectionSocket)
-                break
+                break # Stop handling this client
 
             else:
-                send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n")
+                send_message(connectionSocket, "ERROR|UNKNOWN_ACTION\n\n") # Action isn't recognised
     except Exception as e:
         try:
             send_message(connectionSocket, "ERROR|SERVER_EXCEPTION\n\n")
         except:
             pass
     finally:
-        connectionSocket.close()
+        if username:
+            with online_lock:
+                if online_users.get(username) is connectionSocket:
+                    del online_users(username)
+        connectionSocket.close() # Close the connection when done
 
+# Handles login requests. 
 def handle_login(connectionSocket: socket, temp: list, current_user: str):
     if len(temp) < 3:
         send_message(connectionSocket, "ERROR|INVALID_LOGIN_FORMAT\n\n")
@@ -43,15 +53,15 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str):
     u = temp[1].strip()
     p = temp[2].strip()
 
-    load_accounts()
+    load_accounts() #reload accounts to make sure data is up-to-date
 
-    if u in accounts and accounts[u].strip() == p:
+    if u in accounts and accounts[u].strip() == p: # Checks if username and password match
         send_message(connectionSocket, "OK|LOGIN_SUCCESS\n\n")
         return u
-    if u in accounts:
+    if u in accounts: # Username exists but the password is incorrect
         send_message(connectionSocket, "ERROR|INCORRECT_PASSWORD\n\n")
     else:
-        send_message(connectionSocket, "ERROR|NO_SUCH_USER|SIGNUP_REQUIRED\n\n")
+        send_message(connectionSocket, "ERROR|NO_SUCH_USER|SIGNUP_REQUIRED\n\n") # Username does not exist
     
     return current_user
 
@@ -114,6 +124,7 @@ def send_message(connectionSocket: socket, message: str) -> None:
 def receive_message(connectionSocket: socket) -> str:
     return connectionSocket.recv(1024).decode()
 
+# 
 def receive_packet(connectionSocket: socket) -> list:
     data = ""
     while True:
@@ -123,7 +134,7 @@ def receive_packet(connectionSocket: socket) -> list:
             return []
         data += chunk
 
-        if "\n\n" in data:
+        if "\n\n" in data: 
             break
     packet = data.split("\n\n")[0]
     return packet.split("\n")
