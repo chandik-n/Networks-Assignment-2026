@@ -1,10 +1,7 @@
 from socket import *
 import Protocol # Custom made, see Protocol.py
 import threading
-
-
-accounts = {} # A dictionary of the accounts present in the textfile.
-account_lock = threading.Lock() # Prevents multiple threads from writing to accounts at the same time
+from db import DB
 
 online_users = {}
 online_lock = threading.Lock()
@@ -13,6 +10,7 @@ online_lock = threading.Lock()
 # Handles one connected client. Each client is run in its own thread
 def handle_client(connectionSocket: socket, address: tuple):
     username = None # Will store the username of the logged-in user for this connection
+    db_local = DB()
     try:
         while True:
             temp = receive_packet(connectionSocket) # Reads the entire message from the client
@@ -20,11 +18,12 @@ def handle_client(connectionSocket: socket, address: tuple):
                 break
     
             action = temp[0].strip() # Tells the server what action the user wants to perform
+            
             if action == Protocol.initiate_protocol(1): # LOGIN
-                username = handle_login(connectionSocket, temp, username)
+                username = handle_login(connectionSocket, temp, username, db_local)
 
             elif action == Protocol.initiate_protocol(2): #CREATE
-                handle_account_creation(connectionSocket, temp)
+                handle_account_creation(connectionSocket, temp, db_local)
 
             elif action == Protocol.initiate_protocol(3): #CLOSE
                 handle_program_close(connectionSocket)
@@ -41,11 +40,11 @@ def handle_client(connectionSocket: socket, address: tuple):
         if username:
             with online_lock:
                 if online_users.get(username) is connectionSocket:
-                    del online_users(username)
+                    del online_users[username]
         connectionSocket.close() # Close the connection when done
 
 # Handles login requests. 
-def handle_login(connectionSocket: socket, temp: list, current_user: str):
+def handle_login(connectionSocket: socket, temp: list, current_user: str, db_local: DB):
     if len(temp) < 3:
         send_message(connectionSocket, "ERROR|INVALID_LOGIN_FORMAT\n\n")
         return current_user
@@ -53,19 +52,27 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str):
     u = temp[1].strip()
     p = temp[2].strip()
 
-    load_accounts() #reload accounts to make sure data is up-to-date
-
-    if u in accounts and accounts[u].strip() == p: # Checks if username and password match
-        send_message(connectionSocket, "OK|LOGIN_SUCCESS\n\n")
-        return u
-    if u in accounts: # Username exists but the password is incorrect
-        send_message(connectionSocket, "ERROR|INCORRECT_PASSWORD\n\n")
-    else:
-        send_message(connectionSocket, "ERROR|NO_SUCH_USER|SIGNUP_REQUIRED\n\n") # Username does not exist
+    if not u or not p:
+        send_message(connectionSocket, "ERROR|INVALID_CREDENTIALS\n\n")
+        return current_user
     
-    return current_user
+    try:
+        ok = db_local.login_user(u, p)
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+        return current_user
+    
+    if not ok:
+        send_message(connectionSocket, "ERROR|LOGIN_FAILED\n\n")
+        return current_user
+    
+    with online_lock:
+        online_users[u] = connectionSocket
+    
+    send_message(connectionSocket, "OK|LOGIN_SUCCESS\n\n")
+    return u
 
-def handle_account_creation(connectionSocket: socket, temp: list):
+def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):
     if len(temp) < 3:
         send_message(connectionSocket, "ERROR|INVALID_CREATE_FORMAT\n\n")
         return
@@ -73,43 +80,24 @@ def handle_account_creation(connectionSocket: socket, temp: list):
     new_user = temp[1].strip()
     new_password = temp[2].strip()
 
-    with account_lock:
-        load_accounts()
-        if new_user in accounts:
-            send_message(connectionSocket, "ERROR|USER_ALREADY_EXISTS\n\n")
-            return
-        write_account(new_user, new_password)
+    if not new_user or not new_password:
+        send_message(connectionSocket, "ERROR|INVALID_CREDENTIALS\n\n")
+        return
+    try:
+        db_local.create_user(new_user, new_password)
         send_message(connectionSocket, "OK|SIGNUP_SUCCESSFUL\n\n")
-
-
+    except Exception:
+        send_message(connectionSocket, "ERROR|USER_ALREADY_EXISTS\n\n")
+    
 # This will be much more important later.
 def handle_program_close(connectionSocket: socket):
     send_message(connectionSocket, "OK|BYE\n\n")
-
-# Loads the accounts from the accounts.txt.
-def load_accounts(txt: str = "accounts.txt") -> None:
-    accounts.clear()
-    with open(txt, 'r') as f:
-        for line in f:
-            if not line.strip():
-                continue
-            username, password = line.strip().split(",",1)
-            accounts[username] = password
-
-# Appends an account into accounts.txt.
-def write_account(username: str, password: str) -> None:
-    load_accounts() #HACK: May remove.
-    if username not in accounts:
-        with open("accounts.txt", "a") as f:
-            f.write(f"{username},{password}\n")
-        accounts[username] = password
 
 def main():
     serverPort = 12000
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.bind(('', serverPort))
     serverSocket.listen(5)
-    load_accounts() # Loading the accounts from accounts.txt.
     print("The server is up and running.")
     while True:
         connectionSocket, addr = serverSocket.accept()
