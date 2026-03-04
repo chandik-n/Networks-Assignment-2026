@@ -62,10 +62,25 @@ class DB:
         self.cursor.execute("DELETE FROM Users WHERE user_id = %s OR username = %s", (user_id, username))
         return self.connection.commit()
 
+    # Message related methods
+
+    def store_private_message(self, sender_id, receiver_id, message_text, media=None):
+        if (not (media and message_text)):
+                raise ValueError("Either message text or media must be provided.")
+        self.cursor.execute("INSERT INTO PrivateMessages (sender_id, receiver_id, message_text) VALUES (%s, %s, %s)", (sender_id, receiver_id, message_text))
+        if (media):
+            self.cursor.execute("INSERT INTO PrivateMessages (media) VALUES (%s)", (media,))
+        return self.connection.commit()
+
+    def get_private_messages(self, sender_id, reciever_id):
+        # this method will get private messages between two users, sender and reciever
+        self.cursor.execute("SELECT message_text, sent_at FROM PrivateMessages WHERE sender_id = %s OR sender_id=%s", (sender_id, reciever_id))
+        return self.cursor.fetchall()
+
 
 
 db = DB(host=HOST, user=USER, password=PASSWORD, port=PORT, database=DATABASE)
 
-print("DB connection successful", db.get_all_users())
+print(db.get_all_users())
 
 

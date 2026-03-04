@@ -51,3 +51,7 @@ ALTER TABLE PrivateMessages
 
 ALTER TABLE GroupMessages
     ADD COLUMN media LONGBLOB;
+
+-- We make text message nullable to allow for messages that only contain media (like images or videos) without any accompanying text.
+ALTER TABLE PrivateMessages
+    MODIFY COLUMN message_text TEXT NULL;
