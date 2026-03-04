@@ -1,3 +1,5 @@
+DROP DATABASE IF EXISTS chat_app;
+
 CREATE DATABASE IF NOT EXISTS chat_app;
 USE chat_app;
 
@@ -47,7 +49,11 @@ CREATE TABLE IF NOT EXISTS GroupMessages (
 );
 
 ALTER TABLE PrivateMessages 
-    ADD COLUMN  media LONGBLOB;
+    ADD COLUMN media LONGBLOB;
 
 ALTER TABLE GroupMessages
     ADD COLUMN media LONGBLOB;
+
+-- We make text message nullable to allow for messages that only contain media (like images or videos) without any accompanying text.
+ALTER TABLE PrivateMessages
+    MODIFY COLUMN message_text TEXT NULL;
