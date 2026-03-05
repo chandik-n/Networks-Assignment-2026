@@ -2,10 +2,12 @@ from socket import *
 import Protocol # Custom made, see Protocol.py
 import threading
 from db import DB
+import time
 
-online_users = {}
+online_users = {} # A dictionary to store the online users, and their sockets as a value.
+users_last_seen = {} # A dictionary to store when last they were seen on the server.
 online_lock = threading.Lock()
-
+SLEEPY_TIME = 20 # Constant for the time taken for a user to sleep.
 
 # Handles one connected client. Each client is run in its own thread
 def handle_client(connectionSocket: socket, address: tuple):
@@ -73,6 +75,7 @@ def handle_login(connectionSocket: socket, temp: list, current_user: str, db_loc
     
     with online_lock:
         online_users[u] = connectionSocket
+        users_last_seen[u] = time.time() # The current time.
     
     send_message(connectionSocket, "OK|LOGIN_SUCCESS\n\n")
     return u
@@ -124,16 +127,54 @@ def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):
 def handle_program_close(connectionSocket: socket):
     send_message(connectionSocket, "OK|BYE\n\n")
 
+# This is largely for the sake of achieving the 'Ping' effect with our chats.
+# The good thing about this entire scenario is that we only need to store the effect as:
+# PING|Username
+def udp_server() -> None:
+    serverPort = 14400 
+    serverSocket = socket(AF_INET, SOCK_DGRAM)
+    serverSocket.bind(('0.0.0.0', serverPort))
+    print("The UDP server is up and running.")
+    while True:
+        temp, address = serverSocket.recvfrom(1024)
+        message = temp.decode().strip().split("|")
+        if message[0] == Protocol.initiate_protocol(7): # PING
+            username = message[1]
+            with online_lock:
+                if username in users_last_seen:
+                    users_last_seen[username] = time.time()
+
+# Logs users who haven't sent out a ping to the UDP server out of the TCP server.
+def check_sleepy_accounts():
+    print("The sleepy thread is running.")
+    while True:
+        time.sleep(SLEEPY_TIME)
+        current = time.time()
+        with online_lock:
+            for user in list(users_last_seen.keys()):
+                if (current - users_last_seen[user]) >= SLEEPY_TIME:
+                    # TODO: Print timeout message for the user.
+                    del users_last_seen[user]
+                    if user in online_users:
+                        del online_users[user]
+
 def main():
     serverPort = 12000
     serverSocket = socket(AF_INET, SOCK_STREAM)
     serverSocket.bind(('0.0.0.0', serverPort))
     serverSocket.listen(5)
-    print("The server is up and running.")
+    print("The TCP server is up and running.")
+
+    udpThread = threading.Thread(target = udp_server, daemon = True) # UDP Thread
+    sleepyThread = threading.Thread(target = check_sleepy_accounts, daemon = True) # The sleep checker
+    udpThread.start()
+    sleepyThread.start()
+
+
     while True:
         connectionSocket, addr = serverSocket.accept()
-        thread = threading.Thread(target = handle_client, args = (connectionSocket, addr))
-        thread.start()
+        tcpThread = threading.Thread(target = handle_client, args = (connectionSocket, addr))
+        tcpThread.start()
     
 # Sends a message to the client for simplicity.
 def send_message(connectionSocket: socket, message: str) -> None:
