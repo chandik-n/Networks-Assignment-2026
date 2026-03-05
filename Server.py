@@ -35,10 +35,13 @@ def handle_client(connectionSocket: socket, address: tuple):
             elif action == Protocol.initiate_protocol(4): #PRIVATE
                 handle_private_message(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(7): #OPEN_CHAT
+            elif action == Protocol.initiate_protocol(5): #SEARCH
+                handle_search(connectionSocket, username, temp, db_local)
+
+            elif action == Protocol.initiate_protocol(8): #OPEN_CHAT
                 handle_open_chat(connectionSocket, username, temp, db_local)
 
-            elif action == Protocol.initiate_protocol(8): #CLOSE_CHAT
+            elif action == Protocol.initiate_protocol(9): #CLOSE_CHAT
                 handle_close_chat(connectionSocket, username, temp)
 
             elif action == Protocol.initiate_protocol(6): #CoNTACTS - People who you've chatted with
@@ -168,6 +171,31 @@ def handle_get_contacts(connectionSocket: socket, username: str | None, db_local
     lines = ["OK|CONTACTS"]
     for _contact_id, contact_username in contacts:
         lines.append(str(contact_username))
+    send_message(connectionSocket, "\n".join(lines) + "\n\n")
+
+def handle_search(connectionSocket: socket, username: str | None, temp: list, db_local: DB):
+    if not username:
+        send_message(connectionSocket, "ERROR|NOT_LOGGED_IN\n\n")
+        return
+
+    if len(temp) < 2:
+        send_message(connectionSocket, "ERROR|INVALID_SEARCH_FORMAT\n\n")
+        return
+
+    query = temp[1].strip()
+    if not query:
+        send_message(connectionSocket, "ERROR|INVALID_SEARCH_FORMAT\n\n")
+        return
+
+    try:
+        results = db_local.search_users(query)
+    except Exception:
+        send_message(connectionSocket, "ERROR|DB_ERROR\n\n")
+        return
+
+    lines = ["OK|SEARCH"]
+    for u in results:
+        lines.append(str(u))
     send_message(connectionSocket, "\n".join(lines) + "\n\n")
 
 def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):

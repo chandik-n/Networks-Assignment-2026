@@ -68,7 +68,7 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
                 case 1:
                     handle_user_contacts(clientSocket, username)
                 case 2:
-                    handle_search()
+                    handle_search(clientSocket, username)
                 case 3:
                     handle_group_making()
                 case 4:
@@ -121,7 +121,7 @@ def handle_user_contacts(clientSocket, username) -> None:
     start_private_chat(clientSocket, username, peer_username)
 
 def start_private_chat(clientSocket: socket, my_username, peer_username):
-    send_message(clientSocket, f"{Protocol.initiate_protocol(7)}\n{peer_username}\n\n")
+    send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
     packet = receive_packet(clientSocket)
     if not packet:
         print("No response from server.")
@@ -175,7 +175,7 @@ def start_private_chat(clientSocket: socket, my_username, peer_username):
             send_message(clientSocket, f"{Protocol.initiate_protocol(4)}\n{peer_username}\n{msg}\n\n")
     finally:
         stop_event.set()
-        send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
+        send_message(clientSocket, f"{Protocol.initiate_protocol(9)}\n{peer_username}\n\n")
 
 def log_out(clientSocket: socket, username: str) -> bool:
     while True:
@@ -192,15 +192,47 @@ def log_out(clientSocket: socket, username: str) -> bool:
     return False
 
 
-def handle_search() -> None:
+def handle_search(clientSocket: socket, username: str) -> None:
     while True:
         search = input("Search for a user (Enter 'Q' or 'Quit' to stop):\t")
 
-        # TODO: Send a 'SEARCH' protocol to the server. It verifies if the user exists. Sends a SEARCH_FAIL or SEARCH_SUCCESS.
-        # If fail, then tell the user to enter a valid username (Client). Else, confirm with the user that they are currently
-        # In a chatroom with the person.
         if search.lower() in ['quit', 'q']:
             break
+
+        send_message(clientSocket, f"{Protocol.initiate_protocol(5)}\n{search}\n\n")
+        packet = receive_packet(clientSocket)
+        if not packet:
+            print("No response from server.")
+            continue
+
+        header = packet[0].strip()
+        if header != "OK|SEARCH":
+            print("Unexpected server message:\t", header)
+            continue
+
+        results = [line.strip() for line in packet[1:] if line.strip()]
+        if not results:
+            print("No matches.")
+            continue
+
+        print("Matches:")
+        for i, u in enumerate(results, start=1):
+            print(f"{i}) {u}")
+
+        selection = input("Select a user number to chat, or press Enter to search again: ").strip()
+        if not selection:
+            continue
+        try:
+            idx = int(selection)
+        except ValueError:
+            print("Invalid selection.")
+            continue
+        if idx < 1 or idx > len(results):
+            print("Invalid selection.")
+            continue
+
+        peer_username = results[idx - 1]
+        start_private_chat(clientSocket, username, peer_username)
         
     pass
 
@@ -231,7 +263,7 @@ def close_program(clientSocket: socket) -> None:
 
 def main():
     try:
-        serverName = '0.tcp.ngrok.io' # ======================================================================================================================
+        serverName = '6.tcp.ngrok.io' # ======================================================================================================================
         serverPort = 19852
         clientSocket = socket(AF_INET, SOCK_STREAM)
         clientSocket.connect((serverName, serverPort))

@@ -59,5 +59,6 @@ ALTER TABLE PrivateMessages
     MODIFY COLUMN message_text TEXT NULL;
 
 ALTER TABLE PrivateMessages
-    ADD COLUMN delivered TINYINT(1) NOT NULL DEFAULT 0,
+    ADD COLUMN delivered TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE PrivateMessages
     ADD COLUMN delivered_at TIMESTAMP NULL;

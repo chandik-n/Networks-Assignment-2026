@@ -69,6 +69,14 @@ class DB:
     def get_user_by_username(self, username):
         self.cursor.execute("Select user_id, username FROM Users WHERE username = %s", (username,))
         return self.cursor.fetchone()
+
+    def search_users(self, query: str, limit: int = 10):
+        like = f"%{query}%"
+        self.cursor.execute(
+            "SELECT username FROM Users WHERE username LIKE %s ORDER BY username ASC LIMIT %s",
+            (like, limit),
+        )
+        return [row[0] for row in self.cursor.fetchall()]
     
     def get_group_members(self, group_id):
         self.cursor.execute("SELECT * FROM GroupChatMembers WHERE group_id = %s", (group_id,))
