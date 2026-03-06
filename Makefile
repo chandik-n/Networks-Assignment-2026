@@ -8,7 +8,7 @@ requirements:
 	echo "mysql-connector-python\npython-dotenv" > requirements.txt && pip3 install -r requirements.txt
 
 env:
-	echo "HOST=localhost\nPORT=3306\nDB_USER=root\nPASSWORD=\nDATABASE=chat_app" > .env
+	echo "HOST=localhost\nPORT=3306\nDB_USER=root # change this to your MySQL username\nPASSWORD= # use your MySQL password\nDATABASE=chat_app" > .env
 
 server:
 	python3 Server.py &\

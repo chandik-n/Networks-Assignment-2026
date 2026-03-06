@@ -177,8 +177,11 @@ def handle_user_contacts(clientSocket, username) -> None:
 #         stop_event.set()
 #         send_message(clientSocket, f"{Protocol.initiate_protocol(9)}\n{peer_username}\n\n")
 
+import sys
+import tty
+import termios
+
 def start_private_chat(clientSocket: socket, my_username, peer_username):
-    ## Debugged using Claude AI
     send_message(clientSocket, f"{Protocol.initiate_protocol(8)}\n{peer_username}\n\n")
     packet = receive_packet(clientSocket)
     if not packet:
@@ -207,6 +210,15 @@ def start_private_chat(clientSocket: socket, my_username, peer_username):
             print(f"[{ts}] {sender}: {msg}")
 
     stop_event = threading.Event()
+    input_buffer = []
+    buffer_lock = threading.Lock()
+
+    def reprint_prompt():
+        """Reprint the current input line cleanly."""
+        with buffer_lock:
+            current = "".join(input_buffer)
+        sys.stdout.write(f"\ryou> {current}")
+        sys.stdout.flush()
 
     def receiver_loop():
         while not stop_event.is_set():
@@ -218,33 +230,65 @@ def start_private_chat(clientSocket: socket, my_username, peer_username):
                 break
             kind = incoming[0].strip()
 
-            # Silently discard ACKs — don't let them corrupt the read stream
             if kind in ("OK|MESSAGE_SENT", "OK|PRIVATE_STORED", "OK|CHAT_CLOSED"):
                 continue
 
             if kind == "INCOMING_PRIVATE" and len(incoming) >= 3:
                 sender = incoming[1].strip()
                 msg = incoming[2].strip()
-                # Show all incoming pushes (server already filters by active chat)
-                print(f"\r{sender}: {msg}\nyou> ", end="", flush=True)
+                # Clear current line, print the message above, reprint prompt + buffer
+                sys.stdout.write("\r\033[K")   # move to line start, clear it
+                print(f"{sender}: {msg}")
+                reprint_prompt()
 
     t = threading.Thread(target=receiver_loop, daemon=True)
     t.start()
 
+    # Save terminal settings and switch to raw mode so we can read char by char
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
     try:
+        tty.setraw(fd)
+        sys.stdout.write("\ryou> ")
+        sys.stdout.flush()
+
         while True:
-            msg = input("you> ")
-            if msg.strip() == "/exit":
+            ch = sys.stdin.read(1)
+
+            if ch in ("\r", "\n"):  # Enter
+                with buffer_lock:
+                    msg = "".join(input_buffer)
+                    input_buffer.clear()
+                sys.stdout.write("\r\033[K")  # clear the input line
+                if msg.strip() == "/exit":
+                    break
+                if msg.strip():
+                    print(f"you>: {msg}")  # echo sent message as a chat line
+                    send_message(clientSocket, f"{Protocol.initiate_protocol(4)}\n{peer_username}\n{msg}\n\n")
+                sys.stdout.write("\ryou> ")
+                sys.stdout.flush()
+
+            elif ch in ("\x7f", "\x08"):  # Backspace
+                with buffer_lock:
+                    if input_buffer:
+                        input_buffer.pop()
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+
+            elif ch == "\x03":  # Ctrl+C
                 break
-            if not msg.strip():
-                continue
-            # Send the message — do NOT call receive_packet here.
-            # The receiver thread will consume and discard the ACK.
-            send_message(clientSocket, f"{Protocol.initiate_protocol(4)}\n{peer_username}\n{msg}\n\n")
+
+            else:
+                with buffer_lock:
+                    input_buffer.append(ch)
+                sys.stdout.write(ch)
+                sys.stdout.flush()
+
     finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
         stop_event.set()
         send_message(clientSocket, f"{Protocol.initiate_protocol(9)}\n{peer_username}\n\n")
-        # Give the receiver thread a moment to consume the CHAT_CLOSED ACK
         t.join(timeout=1.0)
 
 
@@ -334,8 +378,8 @@ def close_program(clientSocket: socket) -> None:
 
 def main():
     try:
-        serverName = '0.tcp.ngrok.io' # ======================================================================================================================
-        serverPort = 11124
+        serverName = '0.tcp.sa.ngrok.io' # ======================================================================================================================
+        serverPort = 14262
         clientSocket = socket(AF_INET, SOCK_STREAM)
         clientSocket.connect((serverName, serverPort))
         while True:
