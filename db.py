@@ -29,93 +29,141 @@ class DB:
             port=port,
             autocommit=True
         )
-        self.cursor = self.connection.cursor()
 
-    # user related methods
+    def _cursor(self):
+        """Return a brand-new cursor for every query.
+        This is the key to avoiding stale reads: MySQL Connector cursors hold a
+        server-side read-view handle that persists between execute() calls on the
+        same cursor instance.  Creating a fresh cursor ensures each SELECT sees
+        the latest committed data, even with autocommit=True."""
+        return self.connection.cursor()
+
+    # ------------------------------------------------------------------ users
+
     def create_user(self, username, user_password):
-        if (self.get_user_by_username(username)):
+        # Check for duplicates with a fresh cursor so we see the latest rows.
+        if self.get_user_by_username(username):
             raise ValueError("User already exists.")
-        
-        self.cursor.execute("INSERT INTO Users (username, user_password) VALUES (%s, %s)", (username, user_password))
-        self.connection.commit()
-    
-    def login_user(self, username:str, password:str):
-        """This method will handle user login and verify if the user exists, and if they do, verify whether the provided password matches the password in the db.
-        Returns: 
-            bool: Wether the info provided is true of false"""
+        cursor = self._cursor()
+        cursor.execute(
+            "INSERT INTO Users (username, user_password) VALUES (%s, %s)",
+            (username, user_password),
+        )
+        cursor.close()
 
-        self.cursor.execute("SELECT user_password FROM Users WHERE username = %s", (username,))
-        user_info = self.cursor.fetchone()
-
-        if not user_info:
-            return False
-
+    def login_user(self, username: str, password: str) -> bool:
+        """Verify credentials. Returns True on success, False otherwise."""
         if not username or not password:
             return False
-        
-        return password == user_info[0]
+        cursor = self._cursor()
+        cursor.execute(
+            "SELECT user_password FROM Users WHERE username = %s", (username,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        if not row:
+            return False
+        return password == row[0]
 
-    def updated_logged_in_status(self, user_id, status:bool):
-        self.cursor.execute("UPDATE Users SET logged_in = %s WHERE user_id = %s", (status, user_id))
-        return self.connection.commit()
+    def updated_logged_in_status(self, user_id, status: bool):
+        cursor = self._cursor()
+        cursor.execute(
+            "UPDATE Users SET logged_in = %s WHERE user_id = %s", (status, user_id)
+        )
+        cursor.close()
 
     def get_all_users(self):
-        self.cursor.execute("SELECT * FROM Users")
-        return self.cursor.fetchall()
-    
+        cursor = self._cursor()
+        cursor.execute("SELECT * FROM Users")
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
     def get_user_by_id(self, user_id):
-        self.cursor.execute("SELECT * FROM Users WHERE user_id = %s", (user_id,))
-        return self.cursor.fetchone()
+        cursor = self._cursor()
+        cursor.execute("SELECT * FROM Users WHERE user_id = %s", (user_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        return row
 
     def get_user_by_username(self, username):
-        self.cursor.execute("Select user_id, username FROM Users WHERE username = %s", (username,))
-        return self.cursor.fetchone()
+        cursor = self._cursor()
+        cursor.execute(
+            "SELECT user_id, username FROM Users WHERE username = %s", (username,)
+        )
+        row = cursor.fetchone()
+        cursor.close()
+        return row
 
     def search_users(self, query: str, limit: int = 10):
         like = f"%{query}%"
-        self.cursor.execute(
+        cursor = self._cursor()
+        cursor.execute(
             "SELECT username FROM Users WHERE username LIKE %s ORDER BY username ASC LIMIT %s",
             (like, limit),
         )
-        return [row[0] for row in self.cursor.fetchall()]
-    
+        rows = [row[0] for row in cursor.fetchall()]
+        cursor.close()
+        return rows
+
     def get_group_members(self, group_id):
-        self.cursor.execute("SELECT * FROM GroupChatMembers WHERE group_id = %s", (group_id,))
-        return self.cursor.fetchmany()
-    
+        cursor = self._cursor()
+        cursor.execute(
+            "SELECT * FROM GroupChatMembers WHERE group_id = %s", (group_id,)
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
     def delete_user(self, user_id, username):
-        self.cursor.execute("DELETE FROM Users WHERE user_id = %s OR username = %s", (user_id, username))
-        return self.connection.commit()
-    
+        cursor = self._cursor()
+        cursor.execute(
+            "DELETE FROM Users WHERE user_id = %s OR username = %s", (user_id, username)
+        )
+        cursor.close()
+
     def get_logged_status(self, user_id):
-        # Check whether someone is logged in
-        self.cursor.execute("SELECT logged_in from Users WHERE user_id = %s", (user_id,))
-        return self.cursor.fetchone()
+        cursor = self._cursor()
+        cursor.execute("SELECT logged_in FROM Users WHERE user_id = %s", (user_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        return row
 
-    # Message related methods
+    # --------------------------------------------------------------- messages
 
-    def store_private_message(self, sender_id, receiver_id, message_text, blob:Blob=None, delivered: int = 0):
+    def store_private_message(self, sender_id, receiver_id, message_text, blob: Blob = None, delivered: int = 0):
         if not blob and not message_text:
-                raise ValueError("Either message text or file must be provided.")
-        
+            raise ValueError("Either message text or file must be provided.")
         media_data = blob.convert_to_binary_data() if blob else None
-
-        self.cursor.execute("INSERT INTO PrivateMessages (sender_id, receiver_id, message_text, media, delivered) VALUES (%s, %s, %s, %s, %s)",(sender_id, receiver_id, message_text, media_data, delivered))
-        self.connection.commit()
-        return self.cursor.lastrowid
-
-    # def get_private_messages(self, user_a_id, user_b_id):
-    #     # this method will get private messages between two users, sender and reciever
-    #     self.cursor.execute("SELECT message_text, sent_at, media FROM PrivateMessages WHERE (sender_id = %s AND receiver_id = %s) OR (sender_id=%s and receiver_id = %s) ORDER BY sent_at ASC", (user_a_id, user_b_id, user_b_id, user_a_id))
-    #     return self.cursor.fetchall()
+        cursor = self._cursor()
+        cursor.execute(
+            "INSERT INTO PrivateMessages (sender_id, receiver_id, message_text, media, delivered) VALUES (%s, %s, %s, %s, %s)",
+            (sender_id, receiver_id, message_text, media_data, delivered),
+        )
+        last_id = cursor.lastrowid
+        cursor.close()
+        return last_id
 
     def get_private_messages(self, user_a_id, user_b_id):
-        # this method will get private messages between two users, sender and reciever
-        self.cursor.execute("SELECT u.username, pm.message_text, pm.sent_at FROM PrivateMessages pm JOIN Users u ON u.user_id = pm.sender_id WHERE (pm.sender_id = %s AND pm.receiver_id = %s) OR (pm.sender_id = %s AND pm.receiver_id = %s) ORDER BY pm.sent_at ASC",(user_a_id, user_b_id, user_b_id, user_a_id),)
-        return self.cursor.fetchall()
-    
+        cursor = self._cursor()
+        cursor.execute(
+            """
+            SELECT u.username, pm.message_text, pm.sent_at
+            FROM PrivateMessages pm
+            JOIN Users u ON u.user_id = pm.sender_id
+            WHERE (pm.sender_id = %s AND pm.receiver_id = %s)
+               OR (pm.sender_id = %s AND pm.receiver_id = %s)
+            ORDER BY pm.sent_at ASC
+            """,
+            (user_a_id, user_b_id, user_b_id, user_a_id),
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
     def get_contacts(self, user_id: int):
-        self.cursor.execute(
+        cursor = self._cursor()
+        cursor.execute(
             """
             SELECT DISTINCT u.user_id, u.username
             FROM PrivateMessages pm
@@ -128,38 +176,44 @@ class DB:
             """,
             (user_id, user_id, user_id),
         )
-        return self.cursor.fetchall()
-    
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
     def get_undelivered_messages(self, receiver_id):
-        self.cursor.execute(
+        cursor = self._cursor()
+        cursor.execute(
             """
             SELECT pm.message_id, u.username, pm.message_text
             FROM PrivateMessages pm
-            JOIN Users u
-              ON u.user_id = pm.sender_id
+            JOIN Users u ON u.user_id = pm.sender_id
             WHERE pm.receiver_id = %s AND pm.delivered = 0
             ORDER BY pm.sent_at ASC
             """,
-            (receiver_id,)
+            (receiver_id,),
         )
-        return self.cursor.fetchall()
-    
+        rows = cursor.fetchall()
+        cursor.close()
+        return rows
+
     def mark_pm_delivered(self, message_id):
-        self.cursor.execute("UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE message_id = %s", (message_id,))
-        self.connection.commit()
+        cursor = self._cursor()
+        cursor.execute(
+            "UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE message_id = %s",
+            (message_id,),
+        )
+        cursor.close()
 
     def mark_pm_delivered_between(self, sender_id, receiver_id):
-        self.cursor.execute("UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE sender_id = %s AND receiver_id = %s AND delivered = 0",(sender_id, receiver_id),)
-        self.connection.commit()
-    
+        cursor = self._cursor()
+        cursor.execute(
+            "UPDATE PrivateMessages SET delivered = 1, delivered_at = NOW() WHERE sender_id = %s AND receiver_id = %s AND delivered = 0",
+            (sender_id, receiver_id),
+        )
+        cursor.close()
+
     def close(self):
-        try:
-            self.cursor.close()
-        except Exception as e:
-            print("Error: ", e)
         try:
             self.connection.close()
         except Exception as e:
-            print("Error: ", e)
-
-
+            print("Error closing connection:", e)
