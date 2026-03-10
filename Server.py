@@ -199,8 +199,8 @@ def handle_search(connectionSocket: socket, username: str | None, temp: list, db
         return
 
     lines = ["OK|SEARCH"]
-    for u in results:
-        lines.append(str(u))
+    for row in results:
+        lines.append(str(row[1]))
     send_message(connectionSocket, "\n".join(lines) + "\n\n")
 
 def handle_account_creation(connectionSocket: socket, temp: list, db_local: DB):

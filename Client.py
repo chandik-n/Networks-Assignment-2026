@@ -72,7 +72,7 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
                 case 3:
                     handle_group_making()
                 case 4:
-                        if log_in(clientSocket):
+                        if log_out(clientSocket):
                             break # Breaks out of the main while loop in order to get to the Login screen again.
                 case _:
                     print("Please choose between 1 and 4.")
@@ -387,7 +387,7 @@ def main():
             "1. Log-in\n" \
             "2. Create Account\n" \
             "3. Close Program")
-            num = eval(input())
+            num = int(input())
             if num == 1:
                 log_in(clientSocket)
             elif num == 2:
