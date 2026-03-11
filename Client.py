@@ -60,8 +60,9 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
     print(f"Welcome {username}!\n" \
     "1. Check contacts\n" \
     "2. Search an account\n" \
-    "3. Form a group\n" \
-    "4. Log out\n")
+    "3. Create group\n" \
+    "4. My groups\n" \
+    "5. Log out\n")
     try:
         while True:
             choice = int(input())
@@ -71,12 +72,14 @@ def load_account_menu(clientSocket: socket, username: str) -> None:
                 case 2:
                     handle_search(clientSocket, username)
                 case 3:
-                    handle_group_making()
+                    handle_group_making(clientSocket, username)
                 case 4:
-                        if log_out(clientSocket):
+                    handle_group_list(clientSocket, username)
+                case 5:
+                        if log_out(clientSocket, username):
                             break # Breaks out of the main while loop in order to get to the Login screen again.
                 case _:
-                    print("Please choose between 1 and 4.")
+                    print("Please choose a valid option.")
 
                 
     except ValueError:
@@ -374,18 +377,206 @@ def handle_search(clientSocket: socket, username: str) -> None:
         
     pass
 
-def handle_group_making() -> None:
+def handle_group_making(clientSocket: socket, username: str) -> None:
+    group_name = input("Enter group name: ").strip()
+    if not group_name:
+        print("Group name cannot be empty.")
+        return
+
+    members = []
+    print("Enter usernames to add. Type Q to stop.")
     while True:
-        members = set()
-        member = input("Enter a username (Enter 'Q' or 'Quit' to stop):\t")
+        member = input("Add member: ").strip()
         if member.lower() in ['quit', 'q']:
             break
-        members.add(member)
+        if not member:
+            continue
+        if member == username:
+            print("You are already added automatically.")
+            continue
+        if member not in members:
+            members.append(member)
+    
+    lines = [Protocol.initiate_protocol(12), group_name] + members
+    send_message(clientSocket, "\n".join(lines) + "\n\n")
+
+    packet = receive_packet(clientSocket)
+    if not packet:
+        print("No response from server.")
+        return
+    
+    header = packet[0].strip()
+    if header.startswith("OK|GROUP_CREATED|"):
+        group_id = header.split("|")[2]
+        print(f"Group created successfully. Group ID: {group_id}")
+    elif header == "ERROR|INVALID_GROUP_NAME":
+        print("Invalid group name.")
+    elif header == "ERROR|DB_ERROR":
+        print("Database error.")
+    else:
+        print("Unexpected server message:", header)
     
     # TODO: Iterate through each member of the group and add them to it. Update the DB (Serverside)
 
-    pass
+def handle_group_list(clientSocket: socket, username: str) -> None:
+    send_message(clientSocket, f"{Protocol.initiate_protocol(13)}\n\n")
+
+    packet = receive_packet(clientSocket)
+    if not packet:
+        print("No response from server.")
+        return
     
+    header = packet[0].strip()
+    if header != "OK|GROUPS":
+        print("Unexpected server message:", header)
+        return
+    
+    groups = []
+    for line in packet[1: ]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|", 1)
+        if len(parts) == 2:
+            group_id, group_name = parts
+            groups.append((group_id, group_name))
+
+    if not groups:
+        print("You are not in any groups yet.")
+        return
+    
+    print("Your groups:")
+    for i, (_, group_name) in enumerate(groups, start=1):
+        print(f"{i}) {group_name}")
+    
+    selection = input("Select a group number to open, or press Enter to go back: ").strip()
+    if not selection:
+        return
+    
+    try:
+        idx = int(selection)
+    except ValueError:
+        print("Invalid selection.")
+        return
+
+    if idx < 1 or idx > len(groups):
+        print("Invalid selection.")
+        return
+    
+    group_id, group_name = groups[idx - 1]
+    start_group_chat(clientSocket, username, group_id, group_name)
+
+def start_group_chat(clientSocket: socket, my_username: str, group_id: str, group_name: str):
+    send_message(clientSocket, f"{Protocol.initiate_protocol(14)}\n{group_id}\n\n")
+    packet = receive_packet(clientSocket)
+
+    if not packet:
+        print("No response from server.")
+        return
+    
+    header = packet[0].strip()
+    if header == "ERROR|NOT_IN_GROUP":
+        print("You are not a member of this group.")
+        return
+    if header == "ERROR|DB_ERROR":
+        print("Database error.")
+        return
+    if header != "OK|GROUP_HISTORY":
+        print("Unexpected server message: ", header)
+        return
+    
+    print(f"\n---Group chat: {group_name} (type /exit to leave) ---")
+    for line in packet[1:]:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|", 2)
+        if len(parts) == 3:
+            sender, msg, ts = parts
+            print(f"[{ts}] {sender}: {msg}")
+
+    stop_event = threading.Event()
+    input_buffer = []
+    buffer_lock = threading.Lock()
+
+    def reprint_prompt():
+        with buffer_lock:
+            current = "".join(input_buffer)
+        sys.stdout.write(f"\ryou> {current}")
+        sys.stdout.flush()
+    
+    def receiver_loop():
+        while not stop_event.is_set():
+            try:
+                incoming = receive_packet(clientSocket)
+            except Exception:
+                break
+            if not incoming:
+                break
+
+            kind = incoming[0].strip()
+            if kind in ("OK|GROUP_MESSAGE_SENT", "OK|GROUP_CLOSED"):
+                continue
+            if kind == "INCOMING_GROUP" and len(incoming) >= 4:
+                incoming_group_id = incoming[1].strip()
+                sender = incoming[2].strip()
+                msg = incoming[3].strip()
+
+                if incoming_group_id == str(group_id):
+                    sys.stdout.write("\r\033[K")
+                    print(f"{sender}: {msg}")
+                    reprint_prompt()
+
+    t = threading.Thread(target=receiver_loop, daemon=True)
+    t.start()
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    try:
+        tty.setraw(fd)
+        sys.stdout.write("\ryou> ")
+        sys.stdout.flush()
+
+        while True:
+            ch = sys.stdin.read(1)
+
+            if ch in ("\r", "\n"):
+                with buffer_lock:
+                    msg = "".join(input_buffer)
+                    input_buffer.clear()
+                sys.stdout.write("\r\033[K")
+
+                if msg.strip() == "/exit":
+                    break
+
+                if msg.strip():
+                    print(f"you: {msg}")
+                    send_message(clientSocket, f"{Protocol.initiate_protocol(15)}\n{group_id}\n{msg}\n\n")
+
+                sys.stdout.write("\ryou> ")
+                sys.stdout.flush()
+
+            elif ch in ("\x7f", "\x08"):
+                with buffer_lock:
+                    if input_buffer:
+                        input_buffer.pop()
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+
+            elif ch == "\x03":
+                break
+            else:
+                with buffer_lock:
+                    input_buffer.append(ch)
+                sys.stdout.write(ch)
+                sys.stdout.flush()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        stop_event.set()
+        send_message(clientSocket, f"{Protocol.initiate_protocol(16)}\n{group_id}\n\n")
+        t.join(timeout=1.0)
+
 # Will be defined in much more detail later.
 def close_program(clientSocket: socket) -> None:
     send_message(clientSocket, f"{Protocol.initiate_protocol(3)}\n\n")
